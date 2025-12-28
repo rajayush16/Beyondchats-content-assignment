@@ -16,6 +16,7 @@ const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 const OPENAI_BASE_URL = process.env.OPENAI_BASE_URL || "https://api.openai.com/v1";
 const OPENAI_MODEL = process.env.OPENAI_MODEL || "gpt-4o-mini";
 const EXTRA_CA_CERTS_PATH = process.env.EXTRA_CA_CERTS_PATH || process.env.NODE_EXTRA_CA_CERTS;
+const REFERENCE_CANDIDATES = Number.parseInt(process.env.REFERENCE_CANDIDATES || "10", 10);
 
 function loadExtraCa(path) {
   const raw = fs.readFileSync(path);
@@ -203,8 +204,12 @@ function extractMainContent(html) {
 }
 
 async function scrapeContent(url) {
-  const html = await fetchHtml(url);
-  return extractMainContent(html);
+  try {
+    const html = await fetchHtml(url);
+    return extractMainContent(html);
+  } catch (error) {
+    return null;
+  }
 }
 
 async function callLlm({ title, originalContent, references }) {
@@ -281,15 +286,22 @@ async function run() {
   }
 
   const searchResults = await fetchSearchResults(article.title);
-  const references = filterReferenceLinks(searchResults);
-  if (references.length < 2) {
-    throw new Error("Could not find two reference articles from search results.");
+  const referencePool = filterReferenceLinks(searchResults).slice(0, REFERENCE_CANDIDATES);
+  const enrichedReferences = [];
+
+  for (const ref of referencePool) {
+    const content = await scrapeContent(ref.url);
+    if (!content) {
+      continue;
+    }
+    enrichedReferences.push({ ...ref, content });
+    if (enrichedReferences.length >= 2) {
+      break;
+    }
   }
 
-  const enrichedReferences = [];
-  for (const ref of references) {
-    const content = await scrapeContent(ref.url);
-    enrichedReferences.push({ ...ref, content });
+  if (enrichedReferences.length < 2) {
+    throw new Error("Could not find two reference articles with valid HTTPS.");
   }
 
   const llmResult = await callLlm({
@@ -301,13 +313,13 @@ async function run() {
   const updatedTitle = llmResult.title || article.title;
   const updatedContent = appendReferences(
     llmResult.content || originalContent,
-    references
+    enrichedReferences
   );
 
   const published = await publishArticle({
     title: updatedTitle,
     content: updatedContent,
-    references,
+    references: enrichedReferences,
   });
 
   console.log(`Published generated article: ${published._id}`);
