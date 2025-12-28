@@ -12,9 +12,12 @@ const GOOGLE_PROVIDER = process.env.GOOGLE_PROVIDER || "serpapi";
 const SERPAPI_KEY = process.env.SERPAPI_KEY;
 const GOOGLE_CSE_KEY = process.env.GOOGLE_CSE_KEY;
 const GOOGLE_CSE_CX = process.env.GOOGLE_CSE_CX;
+const LLM_PROVIDER = process.env.LLM_PROVIDER || "openai";
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 const OPENAI_BASE_URL = process.env.OPENAI_BASE_URL || "https://api.openai.com/v1";
 const OPENAI_MODEL = process.env.OPENAI_MODEL || "gpt-4o-mini";
+const OLLAMA_BASE_URL = process.env.OLLAMA_BASE_URL || "http://localhost:11434";
+const OLLAMA_MODEL = process.env.OLLAMA_MODEL || "llama3.1";
 const EXTRA_CA_CERTS_PATH = process.env.EXTRA_CA_CERTS_PATH || process.env.NODE_EXTRA_CA_CERTS;
 const REFERENCE_CANDIDATES = Number.parseInt(process.env.REFERENCE_CANDIDATES || "10", 10);
 const REFERENCE_DOMAIN_BLOCKLIST = (process.env.REFERENCE_DOMAIN_BLOCKLIST || "chatbotsmagazine.com")
@@ -228,15 +231,30 @@ async function scrapeContent(url) {
 }
 
 async function callLlm({ title, originalContent, references }) {
-  if (!OPENAI_API_KEY) {
-    throw new Error("OPENAI_API_KEY is required for LLM calls");
-  }
-
   const referenceSummaries = references
     .map((ref, index) => `Reference ${index + 1}: ${ref.title}\n${ref.content}`)
     .join("\n\n");
 
   const prompt = `You are rewriting a blog post.\n\nOriginal title: ${title}\n\nOriginal content:\n${originalContent}\n\nReference articles:\n${referenceSummaries}\n\nRewrite the original article so that its formatting and content style is similar to the reference articles, while preserving the core topic. Return JSON with keys "title" and "content". The content should be in HTML with headings and paragraphs.`;
+
+  if (LLM_PROVIDER === "ollama") {
+    const response = await httpClient.post(`${OLLAMA_BASE_URL}/api/chat`, {
+      model: OLLAMA_MODEL,
+      messages: [{ role: "user", content: prompt }],
+      options: { temperature: 0.7 },
+      stream: false,
+    });
+    const message = response.data?.message?.content || "";
+    try {
+      return JSON.parse(message);
+    } catch (error) {
+      return { title, content: message };
+    }
+  }
+
+  if (!OPENAI_API_KEY) {
+    throw new Error("OPENAI_API_KEY is required for OpenAI calls");
+  }
 
   const payload = {
     model: OPENAI_MODEL,
