@@ -3,6 +3,7 @@ const cheerio = require("cheerio");
 const dotenv = require("dotenv");
 const fs = require("fs");
 const https = require("https");
+const tls = require("tls");
 
 dotenv.config();
 
@@ -31,8 +32,9 @@ function loadExtraCa(path) {
 let httpsAgent;
 if (EXTRA_CA_CERTS_PATH) {
   try {
-    const ca = loadExtraCa(EXTRA_CA_CERTS_PATH);
-    httpsAgent = new https.Agent({ ca });
+    const extraCa = loadExtraCa(EXTRA_CA_CERTS_PATH);
+    const combinedCa = tls.rootCertificates.concat(extraCa);
+    httpsAgent = new https.Agent({ ca: combinedCa });
   } catch (error) {
     console.warn(`Failed to load extra CA certs from ${EXTRA_CA_CERTS_PATH}: ${error.message}`);
   }
