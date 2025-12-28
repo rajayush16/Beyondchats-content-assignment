@@ -35,12 +35,18 @@ if (EXTRA_CA_CERTS_PATH) {
     const extraCa = loadExtraCa(EXTRA_CA_CERTS_PATH);
     const combinedCa = tls.rootCertificates.concat(extraCa);
     httpsAgent = new https.Agent({ ca: combinedCa });
+    console.log(`Loaded extra CA certs from ${EXTRA_CA_CERTS_PATH}`);
   } catch (error) {
     console.warn(`Failed to load extra CA certs from ${EXTRA_CA_CERTS_PATH}: ${error.message}`);
   }
 }
 
 const httpClient = axios.create(httpsAgent ? { httpsAgent } : {});
+httpClient.interceptors.response.use(undefined, (error) => {
+  const url = error.config?.url || "unknown url";
+  console.error(`Request failed: ${url}`);
+  throw error;
+});
 
 function normalizeText(value) {
   return value.replace(/\s+/g, " ").trim();
