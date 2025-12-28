@@ -1,5 +1,8 @@
 const axios = require("axios");
 const cheerio = require("cheerio");
+const dotenv = require("dotenv");
+
+dotenv.config();
 
 const API_BASE_URL = process.env.API_BASE_URL || "http://localhost:3000";
 const GOOGLE_PROVIDER = process.env.GOOGLE_PROVIDER || "serpapi";
