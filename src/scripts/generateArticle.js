@@ -238,28 +238,43 @@ async function callLlm({ title, originalContent, references }) {
 
   const prompt = `You are rewriting a blog post.\n\nOriginal title: ${title}\n\nOriginal content:\n${originalContent}\n\nReference articles:\n${referenceSummaries}\n\nRewrite the original article so that its formatting and content style is similar to the reference articles, while preserving the core topic. Return JSON with keys "title" and "content". The content should be in HTML with headings and paragraphs.`;
 
-  const response = await httpClient.post(
-    `${OPENAI_BASE_URL}/chat/completions`,
-    {
-      model: OPENAI_MODEL,
-      messages: [{ role: "user", content: prompt }],
-      temperature: 0.7,
-    },
-    {
-      headers: {
-        Authorization: `Bearer ${OPENAI_API_KEY}`,
-        "Content-Type": "application/json",
-      },
+  const payload = {
+    model: OPENAI_MODEL,
+    messages: [{ role: "user", content: prompt }],
+    temperature: 0.7,
+  };
+  const headers = {
+    Authorization: `Bearer ${OPENAI_API_KEY}`,
+    "Content-Type": "application/json",
+  };
+
+  let lastError;
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    try {
+      const response = await httpClient.post(
+        `${OPENAI_BASE_URL}/chat/completions`,
+        payload,
+        { headers }
+      );
+      const message = response.data.choices?.[0]?.message?.content || "";
+      try {
+        return JSON.parse(message);
+      } catch (error) {
+        return { title, content: message };
+      }
+    } catch (error) {
+      lastError = error;
+      const status = error.response?.status;
+      if (status !== 429 || attempt === 3) {
+        break;
+      }
+      const delayMs = 2000 * attempt;
+      console.warn(`OpenAI rate limited. Retrying in ${delayMs / 1000}s...`);
+      await new Promise((resolve) => setTimeout(resolve, delayMs));
     }
-  );
-
-  const message = response.data.choices?.[0]?.message?.content || "";
-
-  try {
-    return JSON.parse(message);
-  } catch (error) {
-    return { title, content: message };
   }
+
+  throw lastError;
 }
 
 function appendReferences(content, references) {
