@@ -7,6 +7,13 @@ const articleSchema = new mongoose.Schema(
     author: { type: String },
     publishedAt: { type: Date },
     excerpt: { type: String },
+    content: { type: String },
+    references: [
+      {
+        title: { type: String },
+        url: { type: String },
+      },
+    ],
     source: { type: String, default: "beyondchats" },
   },
   { timestamps: true }
