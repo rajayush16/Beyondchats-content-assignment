@@ -17,7 +17,7 @@ async function fetchHtml(url) {
   return response.data;
 }
 
-function extractLastPageUrl(html) {
+function extractLastPageInfo(html) {
   const $ = cheerio.load(html);
   let maxPage = 1;
   let lastUrl = BASE_URL;
@@ -44,7 +44,7 @@ function extractLastPageUrl(html) {
     }
   });
 
-  return lastUrl;
+  return { lastUrl, maxPage };
 }
 
 function parseArticles(html) {
@@ -87,11 +87,28 @@ function parseArticles(html) {
 
 async function scrapeOldestArticles(limit = 5) {
   const firstPageHtml = await fetchHtml(BASE_URL);
-  const lastPageUrl = extractLastPageUrl(firstPageHtml);
-  const lastPageHtml = await fetchHtml(lastPageUrl);
+  const { lastUrl, maxPage } = extractLastPageInfo(firstPageHtml);
+  const seen = new Set();
+  const collected = [];
 
-  const articles = parseArticles(lastPageHtml);
-  const sorted = articles.sort((a, b) => {
+  for (let page = maxPage; page >= 1 && collected.length < limit; page -= 1) {
+    const pageUrl = page === maxPage ? lastUrl : `${BASE_URL}page/${page}/`;
+    const pageHtml = await fetchHtml(pageUrl);
+    const articles = parseArticles(pageHtml);
+
+    for (const article of articles) {
+      if (!article.url || seen.has(article.url)) {
+        continue;
+      }
+      seen.add(article.url);
+      collected.push(article);
+      if (collected.length >= limit) {
+        break;
+      }
+    }
+  }
+
+  const sorted = collected.sort((a, b) => {
     const aTime = a.publishedAt ? a.publishedAt.getTime() : Number.MAX_SAFE_INTEGER;
     const bTime = b.publishedAt ? b.publishedAt.getTime() : Number.MAX_SAFE_INTEGER;
     return aTime - bTime;
