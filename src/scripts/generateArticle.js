@@ -17,6 +17,10 @@ const OPENAI_BASE_URL = process.env.OPENAI_BASE_URL || "https://api.openai.com/v
 const OPENAI_MODEL = process.env.OPENAI_MODEL || "gpt-4o-mini";
 const EXTRA_CA_CERTS_PATH = process.env.EXTRA_CA_CERTS_PATH || process.env.NODE_EXTRA_CA_CERTS;
 const REFERENCE_CANDIDATES = Number.parseInt(process.env.REFERENCE_CANDIDATES || "10", 10);
+const REFERENCE_DOMAIN_BLOCKLIST = (process.env.REFERENCE_DOMAIN_BLOCKLIST || "chatbotsmagazine.com")
+  .split(",")
+  .map((entry) => entry.trim())
+  .filter(Boolean);
 
 function loadExtraCa(path) {
   const raw = fs.readFileSync(path);
@@ -112,7 +116,11 @@ function isArticleUrl(url) {
   return /\/(blog|blogs|article|news|posts)\//i.test(url);
 }
 
-function filterReferenceLinks(results) {
+function isBlockedDomain(url) {
+  return REFERENCE_DOMAIN_BLOCKLIST.some((domain) => url.includes(domain));
+}
+
+function filterReferenceLinks(results, limit = 10) {
   const references = [];
   const seen = new Set();
 
@@ -138,28 +146,35 @@ function filterReferenceLinks(results) {
       continue;
     }
 
+    if (isBlockedDomain(url)) {
+      continue;
+    }
+
     seen.add(url);
     references.push(item);
 
-    if (references.length >= 2) {
+    if (references.length >= limit) {
       break;
     }
   }
 
-  if (references.length < 2) {
+  if (references.length < limit) {
     for (const item of results) {
       if (!item.url || seen.has(item.url) || item.url.includes("beyondchats.com")) {
         continue;
       }
+      if (isBlockedDomain(item.url)) {
+        continue;
+      }
       seen.add(item.url);
       references.push(item);
-      if (references.length >= 2) {
+      if (references.length >= limit) {
         break;
       }
     }
   }
 
-  return references.slice(0, 2);
+  return references.slice(0, limit);
 }
 
 async function fetchHtml(url) {
@@ -286,7 +301,7 @@ async function run() {
   }
 
   const searchResults = await fetchSearchResults(article.title);
-  const referencePool = filterReferenceLinks(searchResults).slice(0, REFERENCE_CANDIDATES);
+  const referencePool = filterReferenceLinks(searchResults, REFERENCE_CANDIDATES);
   const enrichedReferences = [];
 
   for (const ref of referencePool) {
