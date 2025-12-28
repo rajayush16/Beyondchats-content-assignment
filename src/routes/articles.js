@@ -23,7 +23,7 @@ router.post("/", async (req, res, next) => {
   }
 });
 
-router.post("/scrape", async (req, res, next) => {
+async function handleScrape(req, res, next) {
   try {
     const scraped = await scrapeOldestArticles(5);
     const saved = await Promise.all(
@@ -40,7 +40,10 @@ router.post("/scrape", async (req, res, next) => {
   } catch (error) {
     next(error);
   }
-});
+}
+
+router.post("/scrape", handleScrape);
+router.get("/scrape", handleScrape);
 
 router.get("/:id", async (req, res, next) => {
   try {
