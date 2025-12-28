@@ -1,6 +1,8 @@
 const axios = require("axios");
 const cheerio = require("cheerio");
 const dotenv = require("dotenv");
+const fs = require("fs");
+const https = require("https");
 
 dotenv.config();
 
@@ -12,6 +14,31 @@ const GOOGLE_CSE_CX = process.env.GOOGLE_CSE_CX;
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 const OPENAI_BASE_URL = process.env.OPENAI_BASE_URL || "https://api.openai.com/v1";
 const OPENAI_MODEL = process.env.OPENAI_MODEL || "gpt-4o-mini";
+const EXTRA_CA_CERTS_PATH = process.env.EXTRA_CA_CERTS_PATH || process.env.NODE_EXTRA_CA_CERTS;
+
+function loadExtraCa(path) {
+  const raw = fs.readFileSync(path);
+  const text = raw.toString("utf8");
+  if (text.includes("BEGIN CERTIFICATE")) {
+    return text;
+  }
+
+  const b64 = raw.toString("base64");
+  const lines = b64.match(/.{1,64}/g) || [];
+  return `-----BEGIN CERTIFICATE-----\n${lines.join("\n")}\n-----END CERTIFICATE-----\n`;
+}
+
+let httpsAgent;
+if (EXTRA_CA_CERTS_PATH) {
+  try {
+    const ca = loadExtraCa(EXTRA_CA_CERTS_PATH);
+    httpsAgent = new https.Agent({ ca });
+  } catch (error) {
+    console.warn(`Failed to load extra CA certs from ${EXTRA_CA_CERTS_PATH}: ${error.message}`);
+  }
+}
+
+const httpClient = axios.create(httpsAgent ? { httpsAgent } : {});
 
 function normalizeText(value) {
   return value.replace(/\s+/g, " ").trim();
@@ -26,7 +53,7 @@ function slugify(value) {
 }
 
 async function fetchArticles() {
-  const response = await axios.get(`${API_BASE_URL}/api/articles`);
+  const response = await httpClient.get(`${API_BASE_URL}/api/articles`);
   return response.data;
 }
 
@@ -36,7 +63,7 @@ async function fetchSearchResults(query) {
       throw new Error("SERPAPI_KEY is required for serpapi provider");
     }
 
-    const response = await axios.get("https://serpapi.com/search.json", {
+    const response = await httpClient.get("https://serpapi.com/search.json", {
       params: {
         engine: "google",
         q: query,
@@ -55,7 +82,7 @@ async function fetchSearchResults(query) {
       throw new Error("GOOGLE_CSE_KEY and GOOGLE_CSE_CX are required for cse provider");
     }
 
-    const response = await axios.get("https://www.googleapis.com/customsearch/v1", {
+    const response = await httpClient.get("https://www.googleapis.com/customsearch/v1", {
       params: {
         key: GOOGLE_CSE_KEY,
         cx: GOOGLE_CSE_CX,
@@ -127,7 +154,7 @@ function filterReferenceLinks(results) {
 }
 
 async function fetchHtml(url) {
-  const response = await axios.get(url, {
+  const response = await httpClient.get(url, {
     headers: {
       "User-Agent": "Mozilla/5.0 (compatible; BeyondChatsScraper/1.0)",
     },
@@ -183,7 +210,7 @@ async function callLlm({ title, originalContent, references }) {
 
   const prompt = `You are rewriting a blog post.\n\nOriginal title: ${title}\n\nOriginal content:\n${originalContent}\n\nReference articles:\n${referenceSummaries}\n\nRewrite the original article so that its formatting and content style is similar to the reference articles, while preserving the core topic. Return JSON with keys "title" and "content". The content should be in HTML with headings and paragraphs.`;
 
-  const response = await axios.post(
+  const response = await httpClient.post(
     `${OPENAI_BASE_URL}/chat/completions`,
     {
       model: OPENAI_MODEL,
@@ -229,7 +256,7 @@ async function publishArticle({ title, content, references }) {
     publishedAt: new Date().toISOString(),
   };
 
-  const response = await axios.post(`${API_BASE_URL}/api/articles`, payload);
+  const response = await httpClient.post(`${API_BASE_URL}/api/articles`, payload);
   return response.data;
 }
 
