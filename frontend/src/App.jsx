@@ -30,9 +30,7 @@ function ArticleCard({ article, tone }) {
         {publishedAt ? <span className="meta">{publishedAt}</span> : null}
       </div>
       <h3 className="card__title">{article.title}</h3>
-      <p className="card__meta">
-        {article.author ? `By ${article.author}` : ""}
-      </p>
+      <p className="card__meta">{article.author ? `By ${article.author}` : ""}</p>
       <p className="card__snippet">
         {snippet || "No summary available yet."}
         {snippet.length >= 220 ? "…" : ""}
@@ -71,26 +69,31 @@ export default function App() {
   const [lastUpdated, setLastUpdated] = useState(null);
 
   const fetchArticles = useCallback(async () => {
+    const response = await fetch(`${API_BASE}/api/articles`);
+    if (!response.ok) {
+      throw new Error(`Request failed (${response.status})`);
+    }
+    const data = await response.json();
+    setArticles(Array.isArray(data) ? data : []);
+  }, []);
+
+  const refreshFeed = useCallback(async () => {
     setStatus("loading");
     setError("");
     try {
-      const response = await fetch(`${API_BASE}/api/articles`);
-      if (!response.ok) {
-        throw new Error(`Request failed (${response.status})`);
-      }
-      const data = await response.json();
-      setArticles(Array.isArray(data) ? data : []);
+      await fetch(`${API_BASE}/api/articles/scrape`, { method: "POST" });
+      await fetchArticles();
       setLastUpdated(new Date());
       setStatus("success");
     } catch (err) {
       setStatus("error");
       setError(err.message || "Failed to load articles");
     }
-  }, []);
+  }, [fetchArticles]);
 
   React.useEffect(() => {
-    fetchArticles();
-  }, [fetchArticles]);
+    refreshFeed();
+  }, [refreshFeed]);
 
   const originals = useMemo(
     () => articles.filter((article) => article.source !== "generated"),
@@ -122,7 +125,7 @@ export default function App() {
             <span className="stat__label">Updated versions</span>
             <span className="stat__value">{generated.length}</span>
           </div>
-          <button className="refresh" onClick={fetchArticles} disabled={status === "loading"}>
+          <button className="refresh" onClick={refreshFeed} disabled={status === "loading"}>
             {status === "loading" ? "Refreshing…" : "Refresh feed"}
           </button>
           {lastUpdated ? (
@@ -131,9 +134,7 @@ export default function App() {
         </div>
       </header>
 
-      {status === "error" ? (
-        <div className="error">{error}</div>
-      ) : null}
+      {status === "error" ? <div className="error">{error}</div> : null}
 
       <section className="section">
         <div className="section__title">
